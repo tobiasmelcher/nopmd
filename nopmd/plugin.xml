@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+<extension point="org.eclipse.ui.handlers">
+  <handler class="nopmd.Handler" commandId="my.commandid">
+  </handler>
+  <handler class="nopmd.RunPmdHandler" commandId="my.runpmdCommand">
+  </handler>
+</extension>
+<extension point="org.eclipse.ui.commands">
+  <category
+    id="my.category"
+    name="mycategory">
+  </category>
+  <command
+    categoryId="my.category"
+    description="nopmd"
+    id="my.commandid"
+    name="nopmd">
+  </command>
+  <command
+    categoryId="my.category"
+    description="runpmd"
+    id="my.runpmdCommand"
+    name="runpmd">
+  </command>
+</extension>
+<extension point="org.eclipse.ui.menus">
+  <menuContribution locationURI="toolbar:org.eclipse.ui.main.toolbar">
+    <toolbar
+      id="my.toolbar"
+      label="nopmd"/>
+  </menuContribution>
+  <menuContribution locationURI="toolbar:my.toolbar">
+     <command
+           commandId="my.commandid"
+           label="nopmd"
+           style="push"
+           tooltip="nopmd">
+        <visibleWhen checkEnabled="true">
+        </visibleWhen>
+     </command>
+     <command
+           commandId="my.runpmdCommand"
+           label="runpmd"
+           style="push"
+           tooltip="runpmd">
+        <visibleWhen checkEnabled="true">
+        </visibleWhen>
+     </command>
+  </menuContribution>
+</extension>
+</plugin>
