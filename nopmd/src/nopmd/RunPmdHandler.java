@@ -1,23 +1,17 @@
 package nopmd;
 
 import java.io.File;
-import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.commands.IHandler;
 import org.eclipse.core.commands.IHandlerListener;
 import org.eclipse.core.resources.IFile;
-import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
-import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -25,6 +19,12 @@ import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.egit.core.Activator;
+import org.eclipse.egit.core.RepositoryCache;
+import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.swt.widgets.Display;
 import org.osgi.framework.Bundle;
 
 /**
@@ -32,6 +32,7 @@ import org.osgi.framework.Bundle;
  * all modified files and runs then pmd only on the modified files.
  *
  */
+@SuppressWarnings("restriction")
 public class RunPmdHandler implements IHandler {
 
 	@Override
@@ -48,22 +49,38 @@ public class RunPmdHandler implements IHandler {
 
 			@Override
 			protected IStatus run(IProgressMonitor monitor) {
-				IProject[] projects = ResourcesPlugin.getWorkspace().getRoot().getProjects();
-				Set<String> modifiedFiles = new HashSet<>();
-				for (IProject project : projects) {
-					if (project.isAccessible() == false)
-						continue;
-					IPath loc = project.getLocation();
-					if (loc == null)
-						continue;
-					String path = loc.toOSString();
-					if (path == null || path.length() == 0)
-						continue;
-					getModifiedFiles(path, modifiedFiles);
+
+				try {
+					Activator act = Activator.getDefault();
+					RepositoryCache cache = act.getRepositoryCache();
+					Repository[] repositories = cache.getAllRepositories();
+					if (repositories == null || repositories.length == 0) {
+						msg("no GIT repositories found - do not run pmd on all uncommited changes");
+						return Status.OK_STATUS;
+					}
+					Set<String> modifiedFiles = new HashSet<>();
+					for (Repository repo : repositories) {
+						Git git = new Git(repo);
+						try {
+							org.eclipse.jgit.api.Status status = git.status().call();
+							Set<String> uncommittedChanges = status.getUncommittedChanges();
+							if (uncommittedChanges == null || uncommittedChanges.size() == 0)
+								continue;
+							for (String change : uncommittedChanges) {
+								File f = new File(repo.getWorkTree() + "/" + change);
+								if (f.exists()) {
+									modifiedFiles.add(f.getCanonicalPath());
+								}
+							}
+						} finally {
+							git.close();
+						}
+					}
+					runPmd(modifiedFiles);
+					msg("PMD executed on "+modifiedFiles.size()+" modified files");
+				} catch (Exception e) {
+					Handler.log(e);
 				}
-				if (modifiedFiles.size() == 0)
-					return Status.OK_STATUS;
-				runPmd(modifiedFiles);
 				return Status.OK_STATUS;
 			}
 		};
@@ -71,24 +88,14 @@ public class RunPmdHandler implements IHandler {
 		return null;
 	}
 
-	private static void getModifiedFiles(String gitRoot, Set<String> result) {
-		String res = CommandUtil.run(Arrays.asList("git", "status"), new File(gitRoot));
-		if (res == null || res.length() == 0)
-			return;
-		Matcher m = Pattern.compile("modified:([^\\r\\n]*)").matcher(res);
-		while (m.find()) {
-			String line = m.group(1).trim();
-			String p = gitRoot + "/" + line;
-			File f = new File(p);
-			if (f.exists()) {
-				try {
-					p = f.getCanonicalPath();
-					result.add(p);
-				} catch (IOException e) {
-					Handler.log(e);
-				}
+	private void msg(final String msg) {
+		Display.getDefault().asyncExec(new Runnable() {
+
+			@Override
+			public void run() {
+				MessageDialog.openInformation(Display.getDefault().getActiveShell(), "PMD", msg);
 			}
-		}
+		});
 	}
 
 	private static void runPmd(Set<String> allFiles) {
